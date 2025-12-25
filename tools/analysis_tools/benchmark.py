@@ -14,6 +14,10 @@ from mmengine.utils import mkdir_or_exist
 
 from mmseg.registry import MODELS
 
+'''
+/home/g/mmsegmentation/configs/stdc/stdc2_in1k-pre_4xb12-80k_cityscapes-512x1024.py
+/home/g/mmsegmentation/outputs/stdc_u2net/iter_80000.pth
+'''
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MMSeg benchmark a model')

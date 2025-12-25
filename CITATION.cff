@@ -1,3 +1,8 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6a4ea5d50fc06d92664e6fb16cae41086670d5db3c32db56196b64575c93b9bd
-size 291
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - name: "MMSegmentation Contributors"
+title: "OpenMMLab Semantic Segmentation Toolbox and Benchmark"
+date-released: 2020-07-10
+url: "https://github.com/open-mmlab/mmsegmentation"
+license: Apache-2.0

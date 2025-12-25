@@ -1,3 +1,5 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c9f890a5df3633f36e1f6b79fcbe76583a9231d502fbef733693aedaf22e7d43
-size 205
+include requirements/*.txt
+include mmseg/.mim/model-index.yml
+include mmseg/utils/bpe_simple_vocab_16e6.txt.gz
+recursive-include mmseg/.mim/configs *.py *.yaml
+recursive-include mmseg/.mim/tools *.py *.sh

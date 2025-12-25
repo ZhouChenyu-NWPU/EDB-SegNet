@@ -1,5 +1,5 @@
 from .common_utils_mbyolo import *
-
+import torch.nn.functional as F
 __all__ = ("VSSBlock", "SimpleStem", "VisionClueMerge", "XSSBlock")
 
 
@@ -413,11 +413,28 @@ class VisionClueMerge(nn.Module):
             nn.SiLU()
         )
 
+
+
     def forward(self, x):
+        B, C, H, W = x.shape
+        # 如果H或W是奇数，就右和下各pad一行/列
+        if H % 2 != 0 or W % 2 != 0:
+            x = F.pad(x, (0, W % 2, 0, H % 2))  # pad顺序是 (left, right, top, bottom)
+
         y = torch.cat([
             x[..., ::2, ::2],
             x[..., 1::2, ::2],
             x[..., ::2, 1::2],
             x[..., 1::2, 1::2]
         ], dim=1)
+
         return self.pw_linear(y)
+
+    # def forward(self, x):
+    #     y = torch.cat([
+    #         x[..., ::2, ::2],
+    #         x[..., 1::2, ::2],
+    #         x[..., ::2, 1::2],
+    #         x[..., 1::2, 1::2]
+    #     ], dim=1)
+    #     return self.pw_linear(y)

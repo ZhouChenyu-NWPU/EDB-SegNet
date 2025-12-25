@@ -52,7 +52,7 @@ def main():
     parser = ArgumentParser()
 
     # 设置预测文件夹路径
-    parser.add_argument('--input_dir', default='/media/zcy/zyy/11_2RELITU/3', help='Input directory containing images')
+    parser.add_argument('--input_dir', default='/media/zcy/zyy/11_2RELITU/7', help='Input directory containing images')
 
     # 设置配置文件路径
     parser.add_argument('--config',
@@ -60,13 +60,13 @@ def main():
                         help='Config file')
 
     # 设置权重文件路径
-    parser.add_argument('--checkpoint', default='/media/zcy/zyy/mmsegmentation_11g07/f15_1c_nolaplac/stdc_u2net_4/iter_80000.pth',
+    parser.add_argument('--checkpoint', default='/media/zcy/zyy/mmsegmentation_11g07/outputsf15_1c/stdc_u2net_4/iter_80000.pth',
                         help='Checkpoint file')
 
     # 设置保存输出的热力图文件夹路径
     parser.add_argument(
         '--out-dir',
-        default='/media/zcy/zyy/语义分割实验/relitu/nolaplac',
+        default='/media/zcy/zyy/语义分割实验/11.2补充热力图两支路区别/7精选',
         help='Directory to save CAM images')
 
     # 设置需要输出网络特定层的热力图
@@ -83,7 +83,57 @@ def main():
         # default='backbone.spatial_branch_layers[1][0]',
         # default='backbone.layer3[0]',
         # default='backbone.gltb1',
-        default='backbone.layer5_',
+        #default='backbone.layer5_',
+        #11.2两支路热力图补充层数
+        #default='backbone.layer3',
+        #default='backbone.layer4[0].conv_list[0].proj_1x1.conv',
+        #default='backbone.layerC3[1]',
+        #default='backbone.layer3[0].conv_list[0].conv_1x1_exp.conv',
+        #default='backbone.layer3[0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.layer4[0].conv_list[2].proj_1x1.conv',
+        #default='backbone.layer5',
+        #default='backbone.layer5.conv_1x1_exp.conv',
+        #default='backbone.layer5_',
+        #default='backbone.layer5_.conv_1x1_exp.conv',
+        #default='backbone.layerC3[1].proj_conv[0]',
+        #default='backbone.layerC3[1].lsblock.fc3',
+        #default='backbone.spatial_branch_layers[0][0]',
+        #default='backbone.spatial_branch_layers[1][0]',
+        #default='backbone.spatial_branch_layers[1][0].attention',
+        #default='backbone.spatial_branch_layers[1][0].conv_list[2].conv_1x1_exp.conv',
+        #default='backbone.spatial_branch_layers[1][0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.spatial_branch_layers[1][0].conv_list[0].proj_1x1.conv ',
+        #default='backbone.layer5_.proj_1x1.conv',
+        #default='backbone.layer5.spp_dw_v2[3].conv',
+        #default='backbone.layer5.spp_dw[3].conv',
+        #default='backbone.aff2.local_att[0]',
+        #default='backbone.aff2.context3[4]',
+
+        default='backbone.aff1',
+        #default='backbone.aff1.conv[0]',
+        #default='backbone.aff1.local_att[0]',
+        #default='backbone.aff2',
+        #default='backbone.aff2.conv[0]',
+        #default='backbone.aff2.local_att[0]',
+        #default='backbone.layer3',
+        #default='backbone.layer3[0].conv_list[0].conv_1x1_exp.conv',
+        #default='backbone.layer3[0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.layer4',
+        #default='backbone.layer4[0].conv_list[0].conv_1x1_exp.conv',
+        #default='backbone.layer4[0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.layer5',
+        #default='backbone.layer5.conv_1x1_exp.conv',
+        #default='backbone.layer5.proj_1x1.conv',
+        #default='backbone.layer5_',
+        #default='backbone.layer5_.conv_1x1_exp.conv',
+        #default='backbone.layer5_.proj_1x1.conv',
+        #default='backbone.spatial_branch_layers[0][0]',
+        #default='backbone.spatial_branch_layers[0][0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.spatial_branch_layers[0][0].conv_list[0].proj_1x1.conv ',
+        #default='backbone.spatial_branch_layers[1][0]',
+        #default='backbone.spatial_branch_layers[1][0].conv_list[2].spp_dw_v2[3].conv',
+        #default='backbone.spatial_branch_layers[1][0].conv_list[0].proj_1x1.conv ',
+
         help='Target layers to visualize CAM')
 
     # Grad-CAM为类激活加权映射，所以需要设置固定类别的索引来绘制，需要与传入网络训练时候一致
@@ -106,7 +156,7 @@ def main():
     device = torch.device(args.device)
     model = model.to(device)
     # print("model:", model)
-    # print_named_modules(model)
+    #print_named_modules(model)
 
     # 列出输入目录中的所有图片文件
     input_files = [f for f in os.listdir(args.input_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]

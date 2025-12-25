@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ..nn_layers.eesp import SESP
+from ..nn_layers.eesp_LED import SESP
 import matplotlib.pyplot as plt
 from mmdet.models.layers.se_layer import ChannelAttention
 

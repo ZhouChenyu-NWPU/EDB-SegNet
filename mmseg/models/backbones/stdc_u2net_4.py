@@ -240,17 +240,17 @@ class STDCNet(BaseModule):
                  norm_cfg,
                  act_cfg,
                  num_convs=4,
-                 in_ch=3,
+                 in_ch=128,
                  out_ch=1,
                  with_final_conv=False,
                  pretrained=None,
                  init_cfg=None):
         super().__init__(init_cfg=init_cfg)
 
-        self.stage2 = RSU6(in_ch, 32, 128)
-        self.pool23 = nn.MaxPool2d(2, stride=2, ceil_mode=True)
+        # self.stage2 = RSU6(in_ch, 32, 128)
+        # self.pool23 = nn.MaxPool2d(2, stride=2, ceil_mode=True)
 
-        self.stage3 = RSU5(128,64,256)
+        self.stage3 = RSU5(in_ch,64,256)
         self.pool34 = nn.MaxPool2d(2,stride=2,ceil_mode=True)
 
         self.stage4 = RSU4(256,128,256)
@@ -267,8 +267,8 @@ class STDCNet(BaseModule):
         hx = x
 
         # stage 2
-        hx2 = self.stage2(hx)
-        hx = self.pool23(hx2)
+        # hx2 = self.stage2(hx)
+        # hx = self.pool23(hx2)
 
         # stage 3
         hx3 = self.stage3(hx)
@@ -276,7 +276,8 @@ class STDCNet(BaseModule):
 
         # stage 4
         hx4_1 = self.stage4(hx)
-        hx4 = self.pool45(hx4_1)
+        hx4_2 = self.pool45(hx4_1)
+        hx4 = self.pool45(hx4_2)
 
         # stage 5
         hx5_1 = self.stage5(hx4)
@@ -387,6 +388,6 @@ class STDCContextPathNet(BaseModule):
         outputs = [outs[0]] + list(arms_out) + [feat_fuse]
         return tuple(outputs)
 
-# net = STDCNet('STDCNet1',3,(32, 64, 256, 512, 1024),'cat',None,None)
-# img = torch.rand([2,3,256,256])
-# net(img)
+net = STDCNet('STDCNet1',128,(32, 64, 256, 512, 1024),'cat',None,None)
+img = torch.rand([2,128,256,256])
+net(img)

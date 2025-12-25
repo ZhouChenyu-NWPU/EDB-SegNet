@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+from torch.nn import init
 from mmcv.cnn import ConvModule
 from mmengine.model import BaseModule, ModuleList, Sequential
 
@@ -11,13 +13,271 @@ from mmseg.registry import MODELS
 from mmseg.models.utils import resize
 # from .bisenetv1 import AttentionRefinementModule
 from mmseg.models.backbones.bisenetv1 import AttentionRefinementModule
+# import matplotlib.pyplot as plt
+# plt.switch_backend('agg')
+
+
+class Shuffle(nn.Module):
+    '''
+    This class implements Channel Shuffling
+    '''
+    def __init__(self, groups):
+        '''
+        :param groups: # of groups for shuffling
+        '''
+        super().__init__()
+        self.groups = groups
+
+    def forward(self, x):
+        batchsize, num_channels, height, width = x.data.size()
+        channels_per_group = num_channels // self.groups
+        x = x.view(batchsize, self.groups, channels_per_group, height, width)
+        x = torch.transpose(x, 1, 2).contiguous()
+        x = x.view(batchsize, -1, height, width)
+        return x
+
+class BR(nn.Module):
+    '''
+        This class groups the batch normalization and PReLU activation
+    '''
+
+    def __init__(self, nOut):
+        '''
+        :param nOut: output feature maps
+        '''
+        super().__init__()
+        self.bn = nn.BatchNorm2d(nOut)
+        self.act = nn.PReLU(nOut)
+
+    def forward(self, input):
+        '''
+        :param input: input feature map
+        :return: normalized and thresholded feature map
+        '''
+        output = self.bn(input)
+        output = self.act(output)
+        return output
+
+class CB(nn.Module):
+    '''
+       This class groups the convolution and batch normalization
+    '''
+
+    def __init__(self, nIn, nOut, kSize, stride=1, groups=1):
+        '''
+        :param nIn: number of input channels
+        :param nOut: number of output channels
+        :param kSize: kernel size
+        :param stride: optinal stide for down-sampling
+        '''
+        super().__init__()
+        padding = int((kSize - 1) / 2)
+        self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False,
+                              groups=groups)
+        self.bn = nn.BatchNorm2d(nOut)
+
+    def forward(self, input):
+        '''
+
+        :param input: input feature map
+        :return: transformed feature map
+        '''
+        output = self.conv(input)
+        output = self.bn(output)
+        return output
+
+class CBR(nn.Module):
+    '''
+    This class defines the convolution layer with batch normalization and PReLU activation
+    '''
+
+    def __init__(self, nIn, nOut, kSize, stride=1, groups=1):
+        '''
+
+        :param nIn: number of input channels
+        :param nOut: number of output channels
+        :param kSize: kernel size
+        :param stride: stride rate for down-sampling. Default is 1
+        '''
+        super().__init__()
+        padding = int((kSize - 1) / 2)
+        self.conv = nn.Conv2d(nIn, nOut, kSize, stride=stride, padding=padding, bias=False, groups=groups)
+        self.bn = nn.BatchNorm2d(nOut)
+        self.act = nn.PReLU(nOut)
+
+    def forward(self, input):
+        '''
+        :param input: input feature map
+        :return: transformed feature map
+        '''
+        output = self.conv(input)
+        # output = self.conv1(output)
+        output = self.bn(output)
+        output = self.act(output)
+        return output
+
+class CDilated(nn.Module):
+    '''
+    This class defines the dilated convolution.
+    '''
+
+    def __init__(self, nIn, nOut, kSize, stride=1, d=1, groups=1):
+        '''
+        :param nIn: number of input channels
+        :param nOut: number of output channels
+        :param kSize: kernel size
+        :param stride: optional stride rate for down-sampling
+        :param d: optional dilation rate
+        '''
+        super().__init__()
+        padding = int((kSize - 1) / 2) * d
+        self.conv = nn.Conv2d(nIn, nOut,kSize, stride=stride, padding=padding, bias=False,
+                              dilation=d, groups=groups)
+
+    def forward(self, input):
+        '''
+        :param input: input feature map
+        :return: transformed feature map
+        '''
+        output = self.conv(input)
+        return output
+
+class EESP(nn.Module):
+    '''
+    This class defines the EESP block, which is based on the following principle
+        REDUCE ---> SPLIT ---> TRANSFORM --> MERGE
+    '''
+
+    def __init__(self, nIn, nOut, stride=1, k=4, r_lim=7, down_method='esp'): #down_method --> ['avg' or 'esp']
+        '''
+        :param nIn: number of input channels
+        :param nOut: number of output channels
+        :param stride: factor by which we should skip (useful for down-sampling). If 2, then down-samples the feature map by 2
+        :param k: # of parallel branches
+        :param r_lim: A maximum value of receptive field allowed for EESP block
+        :param down_method: Downsample or not (equivalent to say stride is 2 or not)
+        '''
+        super().__init__()
+        self.stride = stride
+        n = int(nOut / k)
+        n1 = nOut - (k - 1) * n
+        assert down_method in ['avg', 'esp'], 'One of these is suppported (avg or esp)'
+        assert n == n1, "n(={}) and n1(={}) should be equal for Depth-wise Convolution ".format(n, n1)
+        self.proj_1x1 = CBR(nIn, n, 1, stride=1, groups=k)
+
+        # (For convenience) Mapping between dilation rate and receptive field for a 3x3 kernel
+        map_receptive_ksize = {3: 1, 5: 2, 7: 3, 9: 4, 11: 5, 13: 6, 15: 7, 17: 8}
+        self.k_sizes = list()
+        for i in range(k):
+            ksize = int(3 + 2 * i)
+            # After reaching the receptive field limit, fall back to the base kernel size of 3 with a dilation rate of 1
+            ksize = ksize if ksize <= r_lim else 3
+            self.k_sizes.append(ksize)
+        # sort (in ascending order) these kernel sizes based on their receptive field
+        # This enables us to ignore the kernels (3x3 in our case) with the same effective receptive field in hierarchical
+        # feature fusion because kernels with 3x3 receptive fields does not have gridding artifact.
+        self.k_sizes.sort()
+        self.spp_dw = nn.ModuleList()
+        for i in range(k):
+            d_rate = map_receptive_ksize[self.k_sizes[i]]
+            self.spp_dw.append(CDilated(n, n, kSize=3, stride=stride, groups=n, d=d_rate))
+        # Performing a group convolution with K groups is the same as performing K point-wise convolutions
+        self.conv_1x1_exp = CB(nOut, nOut, 1, 1, groups=k)
+        self.br_after_cat = BR(nOut)
+        self.module_act = nn.PReLU(nOut)
+        self.downAvg = True if down_method == 'avg' else False
+
+    def forward(self, input):
+        '''
+        :param input: input feature map
+        :return: transformed feature map
+        '''
+
+        # Reduce --> project high-dimensional feature maps to low-dimensional space
+        output1 = self.proj_1x1(input)
+        output = [self.spp_dw[0](output1)]
+        # compute the output for each branch and hierarchically fuse them
+        # i.e. Split --> Transform --> HFF
+        for k in range(1, len(self.spp_dw)):
+            out_k = self.spp_dw[k](output1)
+            # HFF
+            out_k = out_k + output[k - 1]
+            output.append(out_k)
+        # Merge
+        expanded = self.conv_1x1_exp( # learn linear combinations using group point-wise convolutions
+            self.br_after_cat( # apply batch normalization followed by activation function (PRelu in this case)
+                torch.cat(output, 1) # concatenate the output of different branches
+            )
+        )
+        del output
+        # if down-sampling, then return the concatenated vector
+        # because Downsampling function will combine it with avg. pooled feature map and then threshold it
+        if self.stride == 2 and self.downAvg:
+            return expanded
+
+        # if dimensions of input and concatenated vector are the same, add them (RESIDUAL LINK)
+        if expanded.size() == input.size():
+            expanded = expanded + input
+
+        # Threshold the feature map using activation function (PReLU in this case)
+        return self.module_act(expanded)
+
+class DownSampler(nn.Module):
+    '''
+    Down-sampling fucntion that has three parallel branches: (1) avg pooling,
+    (2) EESP block with stride of 2 and (3) efficient long-range connection with the input.
+    The output feature maps of branches from (1) and (2) are concatenated and then additively fused with (3) to produce
+    the final output.
+    '''
+
+    def __init__(self, nin, nout, k=4, r_lim=9, reinf=True):
+        '''
+            :param nin: number of input channels
+            :param nout: number of output channels
+            :param k: # of parallel branches
+            :param r_lim: A maximum value of receptive field allowed for EESP block
+            :param reinf: Use long range shortcut connection with the input or not.
+        '''
+        super().__init__()
+        nout_new = nout - nin
+        self.eesp = EESP(nin, nout_new, stride=2, k=k, r_lim=r_lim, down_method='avg')
+        self.avg = nn.AvgPool2d(kernel_size=3, padding=1, stride=2)
+        config_inp_reinf = 3
+        if reinf:
+            self.inp_reinf = nn.Sequential(
+                CBR(config_inp_reinf, config_inp_reinf, 3, 1),
+                CB(config_inp_reinf, nout, 1, 1)
+            )
+        self.act =  nn.PReLU(nout)
+
+    def forward(self, input, input2=None):
+        '''
+        :param input: input feature map
+        :return: feature map down-sampled by a factor of 2
+        '''
+        avg_out = self.avg(input)
+        eesp_out = self.eesp(input)
+        output = torch.cat([avg_out, eesp_out], 1)
+
+        if input2 is not None:
+            #assuming the input is a square image
+            # Shortcut connection with the input image
+            w1 = avg_out.size(2)
+            while True:
+                input2 = F.avg_pool2d(input2, kernel_size=3, padding=1, stride=2)
+                w2 = input2.size(2)
+                if w2 == w1:
+                    break
+            output = output + self.inp_reinf(input2)
+
+        return self.act(output)
 
 class EESPNet(nn.Module):
     '''
     This class defines the ESPNetv2 architecture for the ImageNet classification
     '''
 
-    def __init__(self, args):
+    def __init__(self, num_classes, channels_in):
         '''
         :param classes: number of classes in the dataset. Default is 1000 for the ImageNet dataset
         :param s: factor that scales the number of output feature maps
@@ -27,31 +287,39 @@ class EESPNet(nn.Module):
         # ====================
         # Network configuraiton
         # ====================
-        try:
-            num_classes = args.num_classes
-        except:
-            # if not specified, default to 1000 for imageNet
-            num_classes = 1000  # 1000 for imagenet
 
-        try:
-            channels_in = args.channels
-        except:
-            # if not specified, default to RGB (3)
-            channels_in = 3
+        # try:
+        #     num_classes = args.num_classes
+        # except:
+        #     # if not specified, default to 1000 for imageNet
+        #     # num_classes = 1000  # 1000 for imagenet
+        #     num_classes = 21
+        #
+        # try:
+        #     channels_in = args.channels
+        # except:
+        #     # if not specified, default to RGB (3)
+        #     channels_in = 3
 
-        s = args.s
-        if not s in config_all.sc_ch_dict.keys():
-            print_error_message('Model at scale s={} is not suppoerted yet'.format(s))
-            exit(-1)
+        # s = args.s
+        # if not s in config_all.sc_ch_dict.keys():
+        #     print_error_message('Model at scale s={} is not suppoerted yet'.format(s))
+        #     exit(-1)
 
-        out_channel_map = config_all.sc_ch_dict[args.s]
-        reps_at_each_level = config_all.rep_layers
+        config = [32, 128, 256, 512, 1024, 1280]
+        rep_layers = [0, 3, 7, 3]
+        recept_limit = [13, 11, 9, 7, 5]
+        branches = 4
+        input_reinforcement = True
 
-        recept_limit = config_all.recept_limit  # receptive field at each spatial level
-        K = [config_all.branches]*len(recept_limit) # No. of parallel branches at different level
+        out_channel_map = config
+        reps_at_each_level = rep_layers
+
+        recept_limit = recept_limit  # receptive field at each spatial level
+        K = [branches]*len(recept_limit) # No. of parallel branches at different level
 
         # True for the shortcut connection with input
-        self.input_reinforcement = config_all.input_reinforcement
+        self.input_reinforcement = input_reinforcement
 
         assert len(K) == len(recept_limit), 'Length of branching factor array and receptive field array should be the same.'
 
@@ -69,7 +337,7 @@ class EESPNet(nn.Module):
         for i in range(reps_at_each_level[2]):
             self.level4.append(EESP(out_channel_map[3], out_channel_map[3], stride=1, k=K[3], r_lim=recept_limit[3]))
 
-        self.level5_0 = DownSampler(out_channel_map[3], out_channel_map[4], k=K[3], r_lim=recept_limit[3]) #7
+        self.level5_0 = DownSampler(out_channel_map[3], out_channel_map[4], k=K[3], r_lim=recept_limit[3])  # 7
         self.level5 = nn.ModuleList()
         for i in range(reps_at_each_level[3]):
             self.level5.append(EESP(out_channel_map[4], out_channel_map[4], stride=1, k=K[4], r_lim=recept_limit[4]))
@@ -214,181 +482,9 @@ class EfficientPWConv(nn.Module):
         s = '{name}(in_channels={in_size}, out_channels={out_size})'
         return s.format(name=self.__class__.__name__, **self.__dict__)
 
-class STDCModule(BaseModule):
-    """STDCModule.
-
-    Args:
-        in_channels (int): The number of input channels.
-        out_channels (int): The number of output channels before scaling.
-        stride (int): The number of stride for the first conv layer.
-        norm_cfg (dict): Config dict for normalization layer. Default: None.
-        act_cfg (dict): The activation config for conv layers.
-        num_convs (int): Numbers of conv layers.
-        fusion_type (str): Type of fusion operation. Default: 'add'.
-        init_cfg (dict or list[dict], optional): Initialization config dict.
-            Default: None.
-    """
-
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 stride,
-                 norm_cfg=None,
-                 act_cfg=None,
-                 num_convs=4,
-                 fusion_type='add',
-                 init_cfg=None):
-        super().__init__(init_cfg=init_cfg)
-        assert num_convs > 1
-        assert fusion_type in ['add', 'cat']
-        self.stride = stride
-        self.with_downsample = True if self.stride == 2 else False
-        self.fusion_type = fusion_type
-
-        self.layers = ModuleList()
-        conv_0 = ConvModule(
-            in_channels, out_channels // 2, kernel_size=1, norm_cfg=norm_cfg)
-
-        if self.with_downsample:
-            self.downsample = ConvModule(
-                out_channels // 2,
-                out_channels // 2,
-                kernel_size=3,
-                stride=2,
-                padding=1,
-                groups=out_channels // 2,
-                norm_cfg=norm_cfg,
-                act_cfg=None)
-
-            if self.fusion_type == 'add':
-                self.layers.append(nn.Sequential(conv_0, self.downsample))
-                self.skip = Sequential(
-                    ConvModule(
-                        in_channels,
-                        in_channels,
-                        kernel_size=3,
-                        stride=2,
-                        padding=1,
-                        groups=in_channels,
-                        norm_cfg=norm_cfg,
-                        act_cfg=None),
-                    ConvModule(
-                        in_channels,
-                        out_channels,
-                        1,
-                        norm_cfg=norm_cfg,
-                        act_cfg=None))
-            else:
-                self.layers.append(conv_0)
-                self.skip = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
-        else:
-            self.layers.append(conv_0)
-
-        for i in range(1, num_convs):
-            out_factor = 2**(i + 1) if i != num_convs - 1 else 2**i
-            self.layers.append(
-                ConvModule(
-                    out_channels // 2**i,
-                    out_channels // out_factor,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    norm_cfg=norm_cfg,
-                    act_cfg=act_cfg))
-
-    def forward(self, inputs):
-        if self.fusion_type == 'add':
-            out = self.forward_add(inputs)
-        else:
-            out = self.forward_cat(inputs)
-        return out
-
-    def forward_add(self, inputs):
-        layer_outputs = []
-        x = inputs.clone()
-        for layer in self.layers:
-            x = layer(x)
-            layer_outputs.append(x)
-        if self.with_downsample:
-            inputs = self.skip(inputs)
-
-        return torch.cat(layer_outputs, dim=1) + inputs
-
-    def forward_cat(self, inputs):
-        x0 = self.layers[0](inputs)
-        layer_outputs = [x0]
-        for i, layer in enumerate(self.layers[1:]):
-            if i == 0:
-                if self.with_downsample:
-                    x = layer(self.downsample(x0))
-                else:
-                    x = layer(x0)
-            else:
-                x = layer(x)
-            layer_outputs.append(x)
-        if self.with_downsample:
-            layer_outputs[0] = self.skip(x0)
-        return torch.cat(layer_outputs, dim=1)
-
-
-class FeatureFusionModule(BaseModule):
-    """Feature Fusion Module. This module is different from FeatureFusionModule
-    in BiSeNetV1. It uses two ConvModules in `self.attention` whose inter
-    channel number is calculated by given `scale_factor`, while
-    FeatureFusionModule in BiSeNetV1 only uses one ConvModule in
-    `self.conv_atten`.
-
-    Args:
-        in_channels (int): The number of input channels.
-        out_channels (int): The number of output channels.
-        scale_factor (int): The number of channel scale factor.
-            Default: 4.
-        norm_cfg (dict): Config dict for normalization layer.
-            Default: dict(type='BN').
-        act_cfg (dict): The activation config for conv layers.
-            Default: dict(type='ReLU').
-        init_cfg (dict or list[dict], optional): Initialization config dict.
-            Default: None.
-    """
-
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 scale_factor=4,
-                 norm_cfg=dict(type='BN'),
-                 act_cfg=dict(type='ReLU'),
-                 init_cfg=None):
-        super().__init__(init_cfg=init_cfg)
-        channels = out_channels // scale_factor
-        self.conv0 = ConvModule(
-            in_channels, out_channels, 1, norm_cfg=norm_cfg, act_cfg=act_cfg)
-        self.attention = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),
-            ConvModule(
-                out_channels,
-                channels,
-                1,
-                norm_cfg=None,
-                bias=False,
-                act_cfg=act_cfg),
-            ConvModule(
-                channels,
-                out_channels,
-                1,
-                norm_cfg=None,
-                bias=False,
-                act_cfg=None), nn.Sigmoid())
-
-    def forward(self, spatial_inputs, context_inputs):
-        inputs = torch.cat([spatial_inputs, context_inputs], dim=1)
-        x = self.conv0(inputs)
-        attn = self.attention(x)
-        x_attn = x * attn
-        return x_attn + x
-
 
 @MODELS.register_module()
-class STDCESPNet(BaseModule):
+class STDCNet1(BaseModule):
     """This backbone is the implementation of `Rethinking BiSeNet For Real-time
     Semantic Segmentation <https://arxiv.org/abs/2104.13188>`_.
 
@@ -434,13 +530,13 @@ class STDCESPNet(BaseModule):
 
 
     def __init__(self,
-                 args,
+                 # args,
                  stdc_type,
                  in_channels,
                  channels,
                  bottleneck_type,
                  norm_cfg,
-                 act_cfg,
+                 # act_cfg,
                  num_convs=4,
                  classes=21,
                  dataset='pascal',
@@ -448,6 +544,10 @@ class STDCESPNet(BaseModule):
                  pretrained=None,
                  init_cfg=None):
         super().__init__(init_cfg=init_cfg)
+
+        # self.base_net = EESPNet(args)
+        self.base_net = EESPNet(21,3)
+        del self.base_net.classifier
 
         config = [32, 128, 256, 512, 1024, 1280]
 
@@ -459,8 +559,6 @@ class STDCESPNet(BaseModule):
         base_dec_planes = dec_feat_dict[dataset]
         dec_planes = [4 * base_dec_planes, 3 * base_dec_planes, 2 * base_dec_planes, classes]
         pyr_plane_proj = min(classes // 2, base_dec_planes)
-
-        self.base_net = EESPNet(args)
 
         self.bu_dec_l1 = EfficientPyrPool(in_planes=config[5], proj_planes=pyr_plane_proj,
                                           out_planes=dec_planes[0])
@@ -519,107 +617,12 @@ class STDCESPNet(BaseModule):
             else:
                 enc_out_l5 = layer(enc_out_l5)
 
-        return F.interpolate(enc_out_l5_0, size=x_size, mode='bilinear', align_corners=True)
+        return F.interpolate(enc_out_l5, size=x_size, mode='bilinear', align_corners=True)
 
 
-
-@MODELS.register_module()
-class STDCContextPathNet11(BaseModule):
-    """STDCNet with Context Path. The `outs` below is a list of three feature
-    maps from deep to shallow, whose height and width is from small to big,
-    respectively. The biggest feature map of `outs` is outputted for
-    `STDCHead`, where Detail Loss would be calculated by Detail Ground-truth.
-    The other two feature maps are used for Attention Refinement Module,
-    respectively. Besides, the biggest feature map of `outs` and the last
-    output of Attention Refinement Module are concatenated for Feature Fusion
-    Module. Then, this fusion feature map `feat_fuse` would be outputted for
-    `decode_head`. More details please refer to Figure 4 of original paper.
-
-    Args:
-        backbone_cfg (dict): Config dict for stdc backbone.
-        last_in_channels (tuple(int)), The number of channels of last
-            two feature maps from stdc backbone. Default: (1024, 512).
-        out_channels (int): The channels of output feature maps.
-            Default: 128.
-        ffm_cfg (dict): Config dict for Feature Fusion Module. Default:
-            `dict(in_channels=512, out_channels=256, scale_factor=4)`.
-        upsample_mode (str): Algorithm used for upsampling:
-                ``'nearest'`` | ``'linear'`` | ``'bilinear'`` | ``'bicubic'`` |
-                ``'trilinear'``. Default: ``'nearest'``.
-        align_corners (str): align_corners argument of F.interpolate. It
-            must be `None` if upsample_mode is ``'nearest'``. Default: None.
-        norm_cfg (dict): Config dict for normalization layer.
-            Default: dict(type='BN').
-        init_cfg (dict or list[dict], optional): Initialization config dict.
-            Default: None.
-
-    Return:
-        outputs (tuple): The tuple of list of output feature map for
-            auxiliary heads and decoder head.
-    """
-
-    def __init__(self,
-                 backbone_cfg,
-                 last_in_channels=(1024, 512),
-                 out_channels=128,
-                 ffm_cfg=dict(
-                     in_channels=512, out_channels=256, scale_factor=4),
-                 upsample_mode='nearest',
-                 align_corners=None,
-                 norm_cfg=dict(type='BN'),
-                 init_cfg=None):
-        super().__init__(init_cfg=init_cfg)
-        self.backbone = MODELS.build(backbone_cfg)
-        self.arms = ModuleList()
-        self.convs = ModuleList()
-        for channels in last_in_channels:
-            self.arms.append(AttentionRefinementModule(channels, out_channels))
-            self.convs.append(
-                ConvModule(
-                    out_channels,
-                    out_channels,
-                    3,
-                    padding=1,
-                    norm_cfg=norm_cfg))
-        self.conv_avg = ConvModule(
-            last_in_channels[0], out_channels, 1, norm_cfg=norm_cfg)
-
-        self.ffm = FeatureFusionModule(**ffm_cfg)
-
-        self.upsample_mode = upsample_mode
-        self.align_corners = align_corners
-
-    def forward(self, x):
-        outs = list(self.backbone(x))
-        avg = F.adaptive_avg_pool2d(outs[-1], 1)
-        avg_feat = self.conv_avg(avg)
-
-        feature_up = resize(
-            avg_feat,
-            size=outs[-1].shape[2:],
-            mode=self.upsample_mode,
-            align_corners=self.align_corners)
-        arms_out = []
-        for i in range(len(self.arms)):
-            x_arm = self.arms[i](outs[len(outs) - 1 - i]) + feature_up
-            feature_up = resize(
-                x_arm,
-                size=outs[len(outs) - 1 - i - 1].shape[2:],
-                mode=self.upsample_mode,
-                align_corners=self.align_corners)
-            feature_up = self.convs[i](feature_up)
-            arms_out.append(feature_up)
-
-        feat_fuse = self.ffm(outs[0], arms_out[1])
-
-        # The `outputs` has four feature maps.
-        # `outs[0]` is outputted for `STDCHead` auxiliary head.
-        # Two feature maps of `arms_out` are outputted for auxiliary head.
-        # `feat_fuse` is outputted for decoder head.
-        outputs = [outs[0]] + list(arms_out) + [feat_fuse]
-        return tuple(outputs)
-
-net = STDCESPNet('STDCNet1',3,(32, 64, 256, 512, 1024),'cat', None,None)
+#
+net = STDCNet1('STDCNet1',3,(32, 64, 256, 512, 1024),'cat', None)
+# net = STDCNet1(3, (32, 64, 256, 512, 1024))
 # img = torch.rand([2,3,256,256])
 img = torch.rand([2,3,512,1024])
 net(img)

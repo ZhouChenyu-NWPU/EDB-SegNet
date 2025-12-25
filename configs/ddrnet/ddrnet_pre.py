@@ -17,7 +17,7 @@ _base_ = [
 #     1.0507
 # ]
 
-checkpoint = '/media/g/mydata/results/ddr/ddr_06/iter_80000.pth'  # noqa
+checkpoint = '/media/dl/add/Ly/Seg_exper/ddr_g_data_02/iter_80000.pth'  # noqa
 
 crop_size = (512, 1024)
 data_preprocessor = dict(
@@ -68,7 +68,7 @@ model = dict(
     test_cfg=dict(mode='whole'))
 
 # train_dataloader = dict(batch_size=6, num_workers=4)
-train_dataloader = dict(batch_size=2, num_workers=1)
+train_dataloader = dict(batch_size=6, num_workers=1)
 
 # iters = 120000
 iters = 160000

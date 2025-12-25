@@ -1,6 +1,12 @@
+# _base_ = [
+#     '../_base_/datasets/cityscapes_1024x1024.py',
+#     '../_base_/default_runtime.py',
+# ]
+
 _base_ = [
-    '../_base_/datasets/cityscapes_1024x1024.py',
+    '../_base_/datasets/pascal_voc12.py',
     '../_base_/default_runtime.py',
+    '../_base_/schedules/schedule_80k.py'
 ]
 
 # The class_weight is borrowed from https://github.com/openseg-group/OCNet.pytorch/issues/14 # noqa
@@ -11,7 +17,8 @@ class_weight = [
     1.0507
 ]
 checkpoint = 'https://download.openmmlab.com/mmsegmentation/v0.5/ddrnet/pretrain/ddrnet23-in1kpre_3rdparty-9ca29f62.pth'  # noqa
-crop_size = (1024, 1024)
+# crop_size = (1024, 1024)
+crop_size = (512, 1024)
 data_preprocessor = dict(
     type='SegDataPreProcessor',
     size=crop_size,

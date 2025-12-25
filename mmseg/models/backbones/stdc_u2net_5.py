@@ -387,6 +387,6 @@ class STDCContextPathNet(BaseModule):
         outputs = [outs[0]] + list(arms_out) + [feat_fuse]
         return tuple(outputs)
 
-# net = STDCNet('STDCNet1',3,(32, 64, 256, 512, 1024),'cat',None,None)
-# img = torch.rand([2,3,256,256])
-# net(img)
+net = STDCNet('STDCNet1',3,(32, 64, 256, 512, 1024),'cat',None,None)
+img = torch.rand([2,3,256,256])
+net(img)

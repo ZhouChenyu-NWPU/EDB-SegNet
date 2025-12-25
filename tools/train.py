@@ -10,15 +10,22 @@ from mmengine.runner import Runner
 
 from mmseg.registry import RUNNERS
 
+'''
+/home/g/mmsegmentation/configs/stdc/stdc1_in1k-pre_4xb12-80k_cityscapes-512x1024.py
+--work-dir /home/g/mmsegmentation/outputs/stdc_u2net_4
+'''
 
+import torch
+
+torch.use_deterministic_algorithms(True, warn_only=True)
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a segmentor')
     parser.add_argument('config', help='train config file path')
-    parser.add_argument('--work-dir', help='the dir to save logs and models')
+    parser.add_argument('--work-dir', default="/home/zcy/mmsegmentation_11g07/15-1draw2/stdc_u2net_4", help='the dir to save logs and models')
     parser.add_argument(
         '--resume',
         action='store_true',
-        default=False,
+        default=True,
         help='resume from the latest checkpoint in the work_dir automatically')
     parser.add_argument(
         '--amp',

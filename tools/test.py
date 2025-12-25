@@ -6,6 +6,10 @@ import os.path as osp
 from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
+'''
+/home/g/mmsegmentation/configs/stdc/stdc2_in1k-pre_4xb12-80k_cityscapes-512x1024.py
+/home/g/mmsegmentation/outputs/stdc/iter_80000.pth
+'''
 
 # TODO: support fuse_conv_bn, visualization, and format_only
 def parse_args():

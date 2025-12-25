@@ -15,15 +15,16 @@ from ..layers import CSPLayer
 from .csp_darknet import SPPBottleneck
 
 
-from mmseg.models.backbones.model_utils import MSFA, AFF, CSESP, SPASPP
-from mmseg.models.nn_layers.eesp import SESP, DSESP
-from mmseg.models.utils import DAPPM, BasicBlock, Bottleneck, resize, resize_to_tar
+from mmseg.models.backbones.model_utils_LED import MSFA, AFF, CSESP, SPASPP
+from mmseg.models.nn_layers.eesp_LED import SESP, DSESP
+# from mmseg.models.utils import DAPPM, BasicBlock, Bottleneck, resize, resize_to_tar
+from mmseg.models.utils import DAPPM, BasicBlock, Bottleneck, resize
 from mmseg.utils import OptConfigType
-from mmseg.models.backbones.UNetFormer_GETB import GETBBlock
-from mmseg.models.backbones.Laplacian import LaplacianProcessor
+# from mmseg.models.backbones.UNetFormer_GETB import GETBBlock
+# from mmseg.models.backbones.Laplacian import LaplacianProcessor
 
-from mamba_ultralytics.nn.modules.mamba_yolo import VSSBlock, VisionClueMerge, SimpleStem
-from mamba_ultralytics.nn.modules.block import SPPF
+from ultralytics.nn.modules.mamba_yolo import VSSBlock, VisionClueMerge, SimpleStem
+from ultralytics.nn.modules.block import SPPF
 
 
 @MODELS.register_module()

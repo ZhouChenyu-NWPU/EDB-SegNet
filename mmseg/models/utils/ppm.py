@@ -118,17 +118,16 @@ class DAPPM(BaseModule):
 
     def forward(self, inputs: Tensor):
         feats = []
-        feats.append(self.scales[0](inputs))
+        feats.append(self.scales[0](inputs))  # conv 1*1 512->128
 
-        for i in range(1, self.num_scales):
+        for i in range(1, self.num_scales):   # avgpool(5,2) (9,4) (17,8) (1,1)
             feat_up = F.interpolate(
                 self.scales[i](inputs),
                 size=inputs.shape[2:],
                 mode=self.unsample_mode)
-            feats.append(self.processes[i - 1](feat_up + feats[i - 1]))
+            feats.append(self.processes[i - 1](feat_up + feats[i - 1]))   # 3*3conv
 
-        return self.compression(torch.cat(feats,
-                                          dim=1)) + self.shortcut(inputs)
+        return self.compression(torch.cat(feats, dim=1)) + self.shortcut(inputs)   # 128*8*16
 
 
 class PAPPM(DAPPM):

@@ -74,6 +74,84 @@ class BasicBlock(BaseModule):
 
         return out
 
+# channels xx->xx  尺寸减半
+class BasicBlock_1(BaseModule):
+
+    expansion = 1
+
+    def __init__(self,
+                 in_channels: int,
+                 channels: int,
+                 stride: int = 1,
+                 downsample: nn.Module = None,
+                 norm_cfg: OptConfigType = dict(type='BN'),
+                 act_cfg: OptConfigType = dict(type='ReLU', inplace=True),
+                 act_cfg_out: OptConfigType = dict(type='ReLU', inplace=True),
+                 init_cfg: OptConfigType = None):
+        super().__init__(init_cfg)
+
+        self.conv1 = ConvModule(
+            in_channels,
+            channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg)
+
+        self.conv2 = ConvModule(
+            channels,
+            channels,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=norm_cfg,
+            act_cfg=None)
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.conv1(x)
+        out = self.conv2(out)
+
+        return out
+
+class BasicBlock_2(BaseModule):
+
+    expansion = 1
+
+    def __init__(self,
+                 in_channels: int,
+                 channels: int,
+                 stride: int = 1,
+                 downsample: nn.Module = None,
+                 norm_cfg: OptConfigType = dict(type='BN'),
+                 act_cfg: OptConfigType = dict(type='ReLU', inplace=True),
+                 act_cfg_out: OptConfigType = dict(type='ReLU', inplace=True),
+                 init_cfg: OptConfigType = None):
+        super().__init__(init_cfg)
+
+        self.conv1 = ConvModule(
+            in_channels,
+            channels,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg)
+
+        self.conv2 = ConvModule(
+            channels,
+            channels,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=norm_cfg,
+            act_cfg=None)
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.conv1(x)
+        out = self.conv2(out)
+
+        return out
 
 class Bottleneck(BaseModule):
     """Bottleneck block from `ResNet <https://arxiv.org/abs/1512.03385>`_.

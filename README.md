@@ -43,18 +43,18 @@ You can download the *Apple Branch Seg data* dataset from [**NWPU-Apple Branch S
 
 
 ## 3. Model Training  
-To train the LED-Net model, use the configuration file located at:  
-`../configs/LED_Net/LEDNet_80k_cityscapes-1024x1024.py`  
+To train the EDB-Net model, use the configuration file located at:  
+`../configs/ddrnet/ddrnet_23-slim_in1k-pre_2xb6-120k_cityscapes-1024x1024.py`  
 
 Specify the work directory where logs and model checkpoints will be saved:  
-`--work-dir`, default path is `../LEDNet_fordata_11g15`. This directory is where logs and models will be stored.  
+`--work-dir`, default path is `../15-1draw2/stdc_u2net_4`. This directory is where logs and models will be stored.  
 
 Adjust additional training parameters according to the provided documentation to suit your specific requirements.
 
 ## 4. Model Testing  
 For testing the trained model, configure the following settings:  
-- **Configuration file**: `../configs/LED_Net/LEDNet_80k_cityscapes-1024x1024.py`  
-- **Checkpoint file**: `../lednet_fordata_11g15/iter_80000.pth`  
+- **Configuration file**: `../configs/ddrnet/ddrnet_23-slim_in1k-pre_2xb6-120k_cityscapes-1024x1024.py`  
+- **Checkpoint file**: `../iter_80000.pth`  
 
 You can download the pretrained model checkpoint `iter_80000.pth` from [iter_80000.pth](https://drive.google.com/drive/u/0/folders/1Yw_rb0LoRG5CbLaSbzgNX7aReTlF5cWA).
 

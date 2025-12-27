@@ -4,7 +4,7 @@
     <img src="./Figure1.png" alt="Compares branch segmentation accuracy, computational cost, and parameter size on the orchard dataset. Smaller circle radii indicate fewer parameters. Our method achieves an optimal balance among these metrics." width="60%">
 </p>
 <p align="center">
-  Compares branch segmentation accuracy, computational cost, and parameter size on the orchard dataset. Smaller circle radii indicate fewer parameters. Our method achieves an optimal balance among these metrics.
+ Comparison of models in terms of accuracy, number of parameters, and computational cost, corresponding to IoU, Params, and FLOPs, respectively. Point color represents inference speed (FPS). Our model attains higher accuracy while preserving a lightweight architecture.
 </p>
 
 
@@ -12,7 +12,7 @@
   <img src="./figure3.png" alt="Compares branch segmentation accuracy, computational cost, and parameter size on the orchard dataset. Smaller circle radii indicate fewer parameters. Our method achieves an optimal balance among these metrics." width="70%">
 </p>
 <p align="center">
-  (a) Overall network framework, (b) Semantic Segmentation Head.
+Overall network Architecture.
 </p>
 
 
